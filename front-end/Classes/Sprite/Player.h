@@ -8,8 +8,10 @@
 class Player : public cocos2d::Sprite {
 	int hp = 200;
 	Player();
+
 public:
 	int x = 0, y = 0;
+	cocos2d::Label* name = nullptr;
 	const static int maxHp;
 	Weapon* weapon = nullptr;
 	virtual rapidjson::Document createSyncData() const;
@@ -26,5 +28,5 @@ public:
 	void takeWeapon(Weapon* w);
 	Weapon* dropWeapon();
 
-	static Player* create(cocos2d::Vec2 pos = cocos2d::Vec2::ZERO);
+	static Player* create(cocos2d::Color3B color, cocos2d::Vec2 pos = cocos2d::Vec2::ZERO);
 };

@@ -32,13 +32,27 @@ exports.logout = (server, player) => {
   server.broadcast('playerList', Array.from(server.playerPool).map(player => player.id));
 };
 
+exports.name = (server, player, data) => {
+  player.name = data.name;
+};
+
 exports.requireGameStart = (server, player) => {
   assert(!server.game.started, 'the game has already started');
   server.game.started = true;
   log.info('Game start');
   server.broadcast('gameStart');
   server.alivePlayer = new Set(server.playerPool);
-  let players = Array.from(server.playerPool).map(player => player.id);
+  let players = Array.from(server.playerPool).map(player => {
+    return {
+      id: player.id,
+      name: player.name || '',
+      color: {
+        r: random(190, 255),
+        g: random(190, 255),
+        b: random(190, 255)
+      }
+    };
+  });
   let healPacks = [...genHealPack(game.healPack.ratio * server.playerPool.size, game.healPack.hp)];
   let weapons = [...genWeapon(game.weapon.ratio * server.playerPool.size)];
   let walls = [...genWall(game.wall.num)];
@@ -90,4 +104,8 @@ const broadcastHook = {
       server.game.started = false;
     }
   }
+};
+
+const random = (min, max) => {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 };

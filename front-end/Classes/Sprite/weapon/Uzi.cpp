@@ -3,10 +3,11 @@ USING_NS_CC;
 using namespace std;
 
 string Uzi::file = "uzi";
-int Uzi::magazine = 40;
-float Uzi::fireInterval = 0.05;
+int Uzi::magazine = 30;
+float Uzi::fireInterval = 0.01f;
 float Uzi::reloadTime = 3;
-int Uzi::damage = 13;
+int Uzi::damage = 8;
+float Uzi::speed = 400.0f;
 
 Uzi::Uzi(std::string id) {
 	this->initWithFile("weapon/" + Uzi::file + ".png");
@@ -21,10 +22,12 @@ bool Uzi::fire(bool force) {
 	auto scene = player->getParent();
 	auto angle = player->getRotation();
 	auto pos = player->getPosition();
-	auto normalizedDirection = Vec2(sinf(CC_DEGREES_TO_RADIANS(angle)), cosf(CC_DEGREES_TO_RADIANS(angle)));
-	pos += 45.0f * normalizedDirection;
-	auto bullet = new Bullet(file, pos, damage, player->getRotation(), 500.0f);
-	scene->addChild(bullet);
+	angle += random(-15, 15);
+	pos += 45.0f * Vec2(sinf(CC_DEGREES_TO_RADIANS(angle)), cosf(CC_DEGREES_TO_RADIANS(angle)));
+	scene->addChild(new Bullet(file, pos, damage, player->getRotation(), speed));
+	angle += random(-15, 15);
+	pos += 45.0f * Vec2(sinf(CC_DEGREES_TO_RADIANS(angle)), cosf(CC_DEGREES_TO_RADIANS(angle)));
+	scene->addChild(new Bullet(file, pos, damage, player->getRotation(), speed));
 	this->current = max(0, current - 1);
 	return true;
 }

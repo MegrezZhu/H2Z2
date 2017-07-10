@@ -57,10 +57,12 @@ bool GameScene::init() {
 		this->selfId = data["selfId"].GetString();
 		auto& arr = data["players"];
 		for (SizeType i = 0; i < arr.Size(); i++) {
-			const std::string& id = arr[i].GetString();
+			const std::string& id = arr[i]["id"].GetString();
+			auto& colorData = arr[i]["color"];
+			const Color3B color = Color3B(colorData["r"].GetInt(), colorData["g"].GetInt(), colorData["b"].GetInt());
 			if (id == selfId) {
 				auto& selfPos = data["selfPos"];
-				selfPlayer = Player::create(Vec2(selfPos["x"].GetDouble(), selfPos["y"].GetDouble()));
+				selfPlayer = Player::create(color, Vec2(selfPos["x"].GetDouble(), selfPos["y"].GetDouble()));
 				this->addChild(selfPlayer, 1);
 				updateHpLabel();
 				//auto boom = Boom::create(selfPlayer->getContentSize() / 2);
@@ -75,7 +77,10 @@ bool GameScene::init() {
 				// make the camera follow the player
 				this->runAction(Follow::create(selfPlayer));
 			} else {
-				auto player = Player::create();
+				auto name = Label::createWithSystemFont(arr[i]["name"].GetString(), "Arial", 24);
+				addChild(name, 5);
+				auto player = Player::create(color);
+				player->name = name;
 				this->addChild(player, 1);
 				this->otherPlayers.insert(std::make_pair(id, player));
 			}
@@ -148,7 +153,7 @@ bool GameScene::init() {
 	});
 
 	GSocket->on("logout", [=](GameSocket* client, GenericValue<UTF8<>> &data) {
-		CCLOG("logout");
+		//CCLOG("logout");
 		auto who = data.GetString();
 		auto it = otherPlayers.find(who);
 		if (it != otherPlayers.end()) {
@@ -217,7 +222,7 @@ void GameScene::update(float dt) {
 	frameCounter++;
 
 	if (!selfPlayer) return;
-	if (frameCounter == SYNC_LIMIT) {
+	if (frameCounter >= SYNC_LIMIT) {
 		frameCounter = 0;
 		GSocket->sendEvent("sync", this->selfPlayer->createSyncData());
 	}
@@ -231,8 +236,15 @@ void GameScene::update(float dt) {
 	pos.y = max(pos.y, size.height / 2);
 	selfPlayer->setPosition(pos);
 
-	selfPlayer->setVelocityX(selfPlayer->x * 200.f);
-	selfPlayer->setVelocityY(selfPlayer->y * 200.f);
+	selfPlayer->setVelocityX(selfPlayer->x * 250.f);
+	selfPlayer->setVelocityY(selfPlayer->y * 250.f);
+
+	auto it = otherPlayers.begin();
+	while (it != otherPlayers.end()) {
+		auto pos = it->second->getPosition();
+		it->second->name->setPosition(Vec2(pos.x, pos.y + 70));
+		it++;
+	}
 }
 
 void GameScene::onKeyPressed(EventKeyboard::KeyCode code, Event* event) {
@@ -345,7 +357,9 @@ void GameScene::addListener() {
 }
 
 void GameScene::handleContact(Player* player, Bullet* bullet) {
-	addChild(Boom::create(player->getPosition()), 2);
+	auto boom = Boom::create(player->getPosition());
+	boom->setScale(pow(bullet->getDamage(), 0.4)*0.2);
+	addChild(boom, 2);
 	if (player == selfPlayer) {
 		// self-player was hit
 		player->broadcastHit(bullet->getDamage());
@@ -376,8 +390,8 @@ void GameScene::handleContact(Player* player, Weapon* weapon) {
 
 void GameScene::handleContact(Wall *wall, Bullet *bullet) {
 	auto boom = Boom::create(bullet->getPosition());
-	boom->setScale(0.2f);
-	this->addChild(boom, 2);
+	boom->setScale(pow(bullet->getDamage(), 0.4)*0.2);
+	addChild(boom, 2);
 	bullet->removeFromParentAndCleanup(true);
 }
 
