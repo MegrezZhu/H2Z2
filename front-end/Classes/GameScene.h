@@ -25,13 +25,12 @@ public:
 	Vec2 gameArea;
 	std::set<Sprite*> outOfRangeCheck;
 
-	Player* selfPlayer;
+	Player* selfPlayer = nullptr;
 	std::string selfId;
 
 	std::map<std::string, Player*> otherPlayers;
 	bool started = false;
-	bool alive = true;
-	cocos2d::Label *hpLabel, *weaponLabel;
+	cocos2d::Label *hpLabel, *weaponLabel, *infoLabel, *aliveLabel;
 
     virtual bool init();
     
@@ -48,6 +47,8 @@ public:
 	void selfDead();
 	void updateHpLabel();
 	void updateWeaponLabel();
+	void updateDeadLabel(std::string msg);
+	void changeView();
 
 	Player* getPlayerById(std::string id);
 

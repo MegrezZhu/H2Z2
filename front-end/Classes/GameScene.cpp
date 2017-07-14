@@ -3,8 +3,11 @@
 #include <chrono>
 #include <algorithm>
 
+#define FOLLOW_TAG 10086
+
 USING_NS_CC;
 using namespace std::chrono;
+using namespace std;
 
 Scene* GameScene::createScene() {
 	// 'scene' is an autorelease object
@@ -17,6 +20,17 @@ Scene* GameScene::createScene() {
 	auto gameLayer = GameScene::create();
 	gameLayer->mWorld = scene->getPhysicsWorld();
 	gameLayer->uiLayer = Layer::create();
+	gameLayer->weaponLabel = Label::createWithSystemFont("", "Arial", 30);
+	gameLayer->weaponLabel->setPosition(gameLayer->visibleSize.width - 100.0f, 20.0f);
+	gameLayer->hpLabel = Label::createWithSystemFont("", "Arial", 30);
+	gameLayer->hpLabel->setPosition(gameLayer->visibleSize.width / 2, 20.0f);
+	gameLayer->infoLabel = Label::createWithSystemFont("", "Arial", 24);
+	gameLayer->aliveLabel = Label::createWithSystemFont("", "Arial", 30);
+	gameLayer->aliveLabel->setPosition(gameLayer->visibleSize.width - 50.0f, gameLayer->visibleSize.height - 20.0f);
+	gameLayer->uiLayer->addChild(gameLayer->weaponLabel);
+	gameLayer->uiLayer->addChild(gameLayer->hpLabel);
+	gameLayer->uiLayer->addChild(gameLayer->infoLabel);
+	gameLayer->uiLayer->addChild(gameLayer->aliveLabel);
 
 	// add layer as a child to scene
 	scene->addChild(gameLayer);
@@ -45,19 +59,16 @@ bool GameScene::init() {
 	background->setPosition(gameArea / 2);
 	this->addChild(background, -1);
 	Weapon::init();
+	addChild(Poison::init(gameArea), 6);
 
 	// received as the game starts
 	GSocket->on("initData", [=](GameSocket* client, GenericValue<UTF8<>>& data) {
 		AUDIO->playEffect("sound/start.wav");
-		hpLabel = Label::createWithSystemFont("", "Arial", 30);
-		hpLabel->setPosition(visibleSize.width / 2, 20.0f);
-		uiLayer->addChild(hpLabel);
-		weaponLabel = Label::createWithSystemFont("", "Arial", 30);
-		uiLayer->addChild(weaponLabel);
 		this->selfId = data["selfId"].GetString();
 		auto& arr = data["players"];
+		aliveLabel->setString(to_string(arr.Size()) + " Alive");
 		for (SizeType i = 0; i < arr.Size(); i++) {
-			const std::string& id = arr[i]["id"].GetString();
+			const string& id = arr[i]["id"].GetString();
 			auto& colorData = arr[i]["color"];
 			const Color3B color = Color3B(colorData["r"].GetInt(), colorData["g"].GetInt(), colorData["b"].GetInt());
 			if (id == selfId) {
@@ -65,8 +76,6 @@ bool GameScene::init() {
 				selfPlayer = Player::create(color, Vec2(selfPos["x"].GetDouble(), selfPos["y"].GetDouble()));
 				this->addChild(selfPlayer, 1);
 				updateHpLabel();
-				//auto boom = Boom::create(selfPlayer->getContentSize() / 2);
-				//selfPlayer->addChild(boom);
 				//测试用的枪 懒得满图找
 				//addChild(Weapons::create(0, "0", selfPlayer->getPosition() + Vec2(-200, 0)));
 				//addChild(Weapons::create(1, "1", selfPlayer->getPosition() + Vec2(-100, 0)));
@@ -75,14 +84,16 @@ bool GameScene::init() {
 				//addChild(Weapons::create(4, "4", selfPlayer->getPosition() + Vec2(200, 0)));
 
 				// make the camera follow the player
-				this->runAction(Follow::create(selfPlayer));
+				Action* follow = Follow::create(selfPlayer);
+				follow->setTag(FOLLOW_TAG);
+				this->runAction(follow);
 			} else {
 				auto name = Label::createWithSystemFont(arr[i]["name"].GetString(), "Arial", 24);
 				addChild(name, 5);
 				auto player = Player::create(color);
 				player->name = name;
 				this->addChild(player, 1);
-				this->otherPlayers.insert(std::make_pair(id, player));
+				this->otherPlayers.insert(make_pair(id, player));
 			}
 		}
 
@@ -102,7 +113,6 @@ bool GameScene::init() {
 			auto wall = Wall::create(walls[i]);
 			this->addChild(wall, 1);
 		}
-
 		started = true;
 	});
 
@@ -115,7 +125,7 @@ bool GameScene::init() {
 			// milliseconds ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch());
 			// CCLOG("ping: %lld", ms.count() - data["timestamp"].GetInt64());
 
-			const std::string& id = arr[i]["id"].GetString();
+			const string& id = arr[i]["id"].GetString();
 			auto it = this->otherPlayers.find(id);
 			if (it == this->otherPlayers.end()) continue; // data of selfPlayer, just ignore it
 
@@ -128,24 +138,26 @@ bool GameScene::init() {
 		auto winner = data["winner"].GetString();
 		if (winner == selfId) {
 			// you win
-			auto info = Label::create("You Win!", "Microsoft YaHei UI", 72);
+			auto info = Label::create("You Win!", "Arial", 72);
 			info->setPosition(visibleSize.width / 2, visibleSize.height - 100.0f);
 			uiLayer->addChild(info);
 		}
+		started = false;
+		_eventDispatcher->removeEventListenersForType(EventListener::Type::KEYBOARD);
+		_eventDispatcher->removeEventListenersForType(EventListener::Type::MOUSE);
+		GSocket->removeEventHandler("initData");
+		GSocket->removeEventHandler("sync");
+		GSocket->removeEventHandler("logout");
+		GSocket->removeEventHandler("fire");
+		GSocket->removeEventHandler("dead");
+		GSocket->removeEventHandler("eatPack");
+		GSocket->removeEventHandler("takeWeapon");
+		GSocket->removeEventHandler("dropWeapon");
 		this->runAction(Sequence::create(
 			DelayTime::create(3.0f),
 			CallFunc::create([=]() {
 			    AUDIO->stopAllEffects();
-				GSocket->removeEventHandler("initData");
-				GSocket->removeEventHandler("sync");
 				GSocket->removeEventHandler("gameover");
-				GSocket->removeEventHandler("logout");
-				GSocket->removeEventHandler("fire");
-				GSocket->removeEventHandler("hit");
-				GSocket->removeEventHandler("dead");
-				GSocket->removeEventHandler("eatPack");
-				GSocket->removeEventHandler("takeWeapon");
-				GSocket->removeEventHandler("dropWeapon");
 				Director::getInstance()->popScene();
 			}),
 			NULL
@@ -158,8 +170,9 @@ bool GameScene::init() {
 		auto it = otherPlayers.find(who);
 		if (it != otherPlayers.end()) {
 			auto player = it->second;
+			updateDeadLabel(player->name->getString() + " leave the game");
 			otherPlayers.erase(it);
-
+			aliveLabel->setString(to_string(otherPlayers.size() + 1) + " Alive");
 			player->removeFromParentAndCleanup(true);
 		}
 	});
@@ -170,18 +183,14 @@ bool GameScene::init() {
 		weapon->fire(true);
 	});
 
-	GSocket->on("hit", [=](GameSocket* client, GenericValue<UTF8<>>& data) {
-		auto dmg = data["damage"].GetDouble();
-		auto player = getPlayerById(data["from"].GetString());
-		if (player != nullptr) player->damage(dmg);
-	});
-
 	GSocket->on("dead", [=](GameSocket* client, GenericValue<UTF8<>>& data) {
 		auto who = data["from"].GetString();
 		auto it = otherPlayers.find(who);
 		if (it != otherPlayers.end()) {
+			updateDeadLabel(it->second->name->getString() + " is killed");
 			it->second->removeFromParentAndCleanup(true);
 			otherPlayers.erase(it);
+			aliveLabel->setString(to_string(otherPlayers.size() + 1) + " Alive");
 		}
 	});
 
@@ -212,15 +221,19 @@ bool GameScene::init() {
 }
 
 void GameScene::update(float dt) {
-	updateWeaponLabel();
-	using std::max;
-	using std::min;
-
-	if (!started) return;
 	static int frameCounter = 0;
-	this->getScene()->getPhysicsWorld()->step(1.0f / FRAME_RATE);
-	frameCounter++;
 
+	auto it = otherPlayers.begin();
+	this->getScene()->getPhysicsWorld()->step(1.0f / FRAME_RATE);
+	while (it != otherPlayers.end()) {
+		auto pos = it->second->getPosition();
+		it->second->name->setPosition(Vec2(pos.x, pos.y + 70));
+		it++;
+	}
+	Poison::drawPoison();
+	if (!started || !selfPlayer) return;
+	updateWeaponLabel();
+	frameCounter++;
 	if (!selfPlayer) return;
 	if (frameCounter >= SYNC_LIMIT) {
 		frameCounter = 0;
@@ -236,14 +249,17 @@ void GameScene::update(float dt) {
 	pos.y = max(pos.y, size.height / 2);
 	selfPlayer->setPosition(pos);
 
+	// player move
 	selfPlayer->setVelocityX(selfPlayer->x * 250.f);
 	selfPlayer->setVelocityY(selfPlayer->y * 250.f);
 
-	auto it = otherPlayers.begin();
-	while (it != otherPlayers.end()) {
-		auto pos = it->second->getPosition();
-		it->second->name->setPosition(Vec2(pos.x, pos.y + 70));
-		it++;
+	// poison
+	if (Poison::inside(pos)) {
+		if (!selfPlayer->damage(Poison::getDamage())) {
+			selfPlayer->broadcastDead();
+			selfDead();
+		}
+		updateHpLabel();
 	}
 }
 
@@ -309,16 +325,17 @@ void GameScene::onMouseMove(EventMouse* event) {
 }
 
 void GameScene::onMouseDown(EventMouse* event) {
-	if (!selfPlayer) return;
+	if (!started) return;
 	switch (event->getMouseButton()) {
 		case EventMouse::MouseButton::BUTTON_LEFT:
-			if (selfPlayer->weapon != nullptr) {
-				if (selfPlayer->weapon->fire())
-					selfPlayer->weapon->broadCastFire();
+			if (selfPlayer) {
+				if (selfPlayer->weapon != nullptr) {
+					if (selfPlayer->weapon->fire())
+						selfPlayer->weapon->broadCastFire();
+				}
+			} else {
+				changeView();
 			}
-			break;
-		case EventMouse::MouseButton::BUTTON_RIGHT:
-		default:
 			break;
 	}
 }
@@ -362,7 +379,6 @@ void GameScene::handleContact(Player* player, Bullet* bullet) {
 	addChild(boom, 2);
 	if (player == selfPlayer) {
 		// self-player was hit
-		player->broadcastHit(bullet->getDamage());
 		if (!player->damage(bullet->getDamage())) {
 			player->broadcastDead();
 			selfDead();
@@ -373,7 +389,7 @@ void GameScene::handleContact(Player* player, Bullet* bullet) {
 }
 
 void GameScene::handleContact(Player* player, HealPack* pack) {
-	if (player->getHp() == Player::maxHp) return;
+	if (player->getHp() >= Player::maxHp) return;
 	player->heal(pack->getHp());
 	updateHpLabel();
 	pack->broadcastEaten();
@@ -384,7 +400,6 @@ void GameScene::handleContact(Player* player, Weapon* weapon) {
 	if (player == selfPlayer && selfPlayer->weapon == nullptr) {
 		player->takeWeapon(weapon);
 		weapon->broadCastToken();
-		// updateWeaponLabel();
 	}
 }
 
@@ -396,28 +411,33 @@ void GameScene::handleContact(Wall *wall, Bullet *bullet) {
 }
 
 void GameScene::selfDead() {
-	auto info = Label::create("You Died!", "Microsoft YaHei UI", 72);
-	info->setPosition(visibleSize.width / 2, visibleSize.height - 100.0f);
-	uiLayer->addChild(info);
-
-	// _eventDispatcher->removeEventListenersForType(EventListener::Type::KEYBOARD);
-	_eventDispatcher->removeEventListenersForType(EventListener::Type::MOUSE);
-	alive = false;
-	// invisible & untouchable
-	auto body = selfPlayer->getPhysicsBody();
-	selfPlayer->setVisible(false);
-	body->setCollisionBitmask(0x00000000);
-	body->setContactTestBitmask(0x00000000);
-	body->setCategoryBitmask(0x00000000);
+	// UI
+	updateDeadLabel("You died!");
+	aliveLabel->setString(to_string(otherPlayers.size()) + " Alive");
+	if (started) {
+		auto info = Label::create("You Died!", "Arial", 72);
+		info->setPosition(visibleSize.width / 2, visibleSize.height - 100.0f);
+		uiLayer->addChild(info);
+	}
+	weaponLabel->setString("");
+	hpLabel->setString("");
+	// 移出键盘监听器
+	_eventDispatcher->removeEventListenersForType(EventListener::Type::KEYBOARD);
+	//_eventDispatcher->removeEventListenersForType(EventListener::Type::MOUSE);
+	// 移除玩家
+	selfPlayer->removeFromParentAndCleanup(true);
+	selfPlayer = nullptr;
+	// 查看其他玩家
+	changeView();
 }
 
 void GameScene::updateHpLabel() {
-	static char buffer[20];
-	sprintf(buffer, "hp: %d", selfPlayer->getHp());
-	hpLabel->setString(buffer);
+	if (!selfPlayer) return;
+	hpLabel->setString("HP: " + to_string(selfPlayer->getHp()));
 }
 
 void GameScene::updateWeaponLabel() {
+	if (!selfPlayer) return;
 	static char buffer[40];
 	auto w = selfPlayer->weapon;
 	if (w == nullptr) {
@@ -427,7 +447,6 @@ void GameScene::updateWeaponLabel() {
 		else sprintf(buffer, "ammo: %d/%d", w->current, w->getMagazine());
 		weaponLabel->setString(buffer);
 	}
-	weaponLabel->setPosition(visibleSize.width - weaponLabel->getContentSize().width / 2 - 10.0f, 20.0f);
 }
 
 template<typename Type1, typename Type2>
@@ -443,13 +462,33 @@ bool GameScene::_handleContact(cocos2d::Sprite *node1, cocos2d::Sprite *node2) {
 	return false;
 }
 
-void resetPhysics(Node* node, PhysicsBody* body) {
-	node->removeComponent(node->getPhysicsBody());
-	node->setPhysicsBody(body);
-}
-
-Player* GameScene::getPlayerById(std::string id) {
+Player* GameScene::getPlayerById(string id) {
 	auto it = otherPlayers.find(id);
 	if (it != otherPlayers.end()) return it->second;
 	return nullptr;
+}
+
+void GameScene::updateDeadLabel(string msg) {
+	infoLabel->setVisible(true);
+	infoLabel->setString(infoLabel->getString() + "\n" + msg);
+	auto size = infoLabel->getContentSize();
+	infoLabel->setPosition(size.width/2+20.0f, size.height/2.0+20.0f);
+	runAction(Sequence::create(DelayTime::create(10.0f), CallFunc::create([this]() {
+		infoLabel->setVisible(false);
+	}), nullptr));
+}
+
+void GameScene::changeView() {
+	if (selfPlayer || otherPlayers.size() <= 1) return;
+	static auto it = otherPlayers.begin();
+	if (it == otherPlayers.end()) {
+		it = otherPlayers.begin();
+	}
+	this->stopActionByTag(FOLLOW_TAG);
+	auto follow = Follow::create(it->second);
+	if (!follow) return;
+	follow->setTag(FOLLOW_TAG);
+	this->runAction(follow);
+	hpLabel->setString("Watching \"" + it->second->name->getString() + "\" (click to change)");
+	it++;
 }
